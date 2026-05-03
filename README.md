@@ -74,8 +74,3 @@ distributed-sync-system/
 └── requirements.txt
 ```
 
-## Video Demo
-
-> *Ganti dengan link YouTube sebelum pengumpulan.*
-
-`https://www.youtube.com/watch?v=YOUR_VIDEO_ID`
