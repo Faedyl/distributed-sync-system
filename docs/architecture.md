@@ -10,21 +10,26 @@ Three independent distributed services share one transport layer (HTTP/JSON) and
 
 ```mermaid
 graph TB
-  subgraph Lock cluster (Raft)
-    L1[lock1\nleader] -- AppendEntries --> L2[lock2]
+  subgraph Lock_Cluster ["Lock cluster (Raft)"]
+    L1["lock1 (leader)"] -- AppendEntries --> L2[lock2]
     L1 -- AppendEntries --> L3[lock3]
-    L2 -.RequestVote.-> L3
+    L2 -. RequestVote .-> L3
   end
-  subgraph Queue cluster (consistent hashing)
+
+  subgraph Queue_Cluster ["Queue cluster (consistent hashing)"]
     Q1[queue1] --- Q2[queue2] --- Q3[queue3]
     Q1 -- replicate --> Q2
     Q1 -- replicate --> Q3
   end
-  subgraph Cache cluster (MESI)
+
+  subgraph Cache_Cluster ["Cache cluster (MESI)"]
     C1[cache1] -- snoop --> C2[cache2]
     C1 -- snoop --> C3[cache3]
   end
-  Client --> L1 & Q1 & C1
+
+  Client --> L1
+  Client --> Q1
+  Client --> C1
 ```
 
 ## Distributed Lock Manager (Raft-backed)
