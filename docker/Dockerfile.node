@@ -1,0 +1,33 @@
+# Multi-purpose node image. The COMPONENT env var selects which service runs.
+FROM python:3.11-slim AS base
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY src /app/src
+COPY pyproject.toml /app/pyproject.toml
+
+ENV PYTHONPATH=/app
+
+RUN useradd -r -u 10001 dsync \
+ && mkdir -p /var/lib/dsync \
+ && chown -R dsync:dsync /var/lib/dsync /app
+USER dsync
+
+# COMPONENT picks the entrypoint. Defaults to lock_manager.
+ENV COMPONENT=lock_manager
+
+HEALTHCHECK --interval=10s --timeout=2s --start-period=5s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${NODE_PORT:-8001}/healthz" || exit 1
+
+ENTRYPOINT ["/bin/sh", "-c", "exec python -m src.nodes.${COMPONENT}"]

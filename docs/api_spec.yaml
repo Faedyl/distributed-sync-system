@@ -1,0 +1,288 @@
+openapi: 3.0.3
+info:
+  title: Distributed Synchronization System API
+  version: 0.1.0
+  description: |
+    HTTP/JSON API for the distributed lock manager, distributed queue, and
+    distributed cache. All three components share the same operational
+    endpoints (/healthz, /status, /metrics).
+servers:
+  - url: http://localhost:18011
+    description: lock1
+  - url: http://localhost:18021
+    description: queue1
+  - url: http://localhost:18031
+    description: cache1
+
+tags:
+  - name: ops
+  - name: lock
+  - name: queue
+  - name: cache
+  - name: raft
+
+paths:
+  /healthz:
+    get:
+      tags: [ops]
+      summary: Liveness probe
+      responses:
+        "200": { description: OK }
+
+  /status:
+    get:
+      tags: [ops]
+      summary: Component status (includes Raft role for lock manager)
+      responses:
+        "200":
+          description: status
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /metrics:
+    get:
+      tags: [ops]
+      summary: Prometheus text exposition
+      responses:
+        "200":
+          description: metrics
+          content:
+            text/plain: {}
+
+  /metrics.json:
+    get:
+      tags: [ops]
+      summary: JSON metrics snapshot
+      responses:
+        "200":
+          description: metrics
+          content:
+            application/json: {}
+
+  # ---------------- LOCK MANAGER ----------------
+  /lock/acquire:
+    post:
+      tags: [lock]
+      summary: Acquire a shared or exclusive lock (blocks until grant or timeout)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resource, owner, mode]
+              properties:
+                resource:   { type: string, example: "orders" }
+                owner:      { type: string, example: "tx-123" }
+                mode:       { type: string, enum: [shared, exclusive] }
+                timeout_ms: { type: integer, default: 3000 }
+      responses:
+        "200":
+          description: outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [granted, waiting, deadlock, aborted, timeout] }
+                  victim: { type: string, nullable: true }
+        "421":
+          description: not the leader
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:     { type: string }
+                  leader_id: { type: string, nullable: true }
+
+  /lock/release:
+    post:
+      tags: [lock]
+      summary: Release a held lock
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resource, owner]
+              properties:
+                resource: { type: string }
+                owner:    { type: string }
+      responses:
+        "200": { description: ok }
+
+  /lock/release_all:
+    post:
+      tags: [lock]
+      summary: Release all locks held by an owner; cancel pending waits
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [owner]
+              properties:
+                owner: { type: string }
+      responses:
+        "200": { description: ok }
+
+  /lock/state:
+    get:
+      tags: [lock]
+      summary: Snapshot of the lock table
+      responses:
+        "200": { description: snapshot }
+
+  /lock/wait_for_graph:
+    get:
+      tags: [lock]
+      summary: Snapshot of the wait-for graph
+      responses:
+        "200": { description: snapshot }
+
+  # ---------------- QUEUE ----------------
+  /queue/produce:
+    post:
+      tags: [queue]
+      summary: Append a message to a topic. Forwards to primary if needed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, payload]
+              properties:
+                topic:   { type: string }
+                payload: {}
+      responses:
+        "200":
+          description: produced
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:               { type: boolean }
+                  seq:              { type: integer }
+                  leader:           { type: string }
+                  replicas:         { type: array, items: { type: string } }
+                  failed_replicas:  { type: array, items: { type: string } }
+
+  /queue/consume:
+    post:
+      tags: [queue]
+      summary: Pull up to `count` messages with a visibility timeout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, consumer_id]
+              properties:
+                topic:         { type: string }
+                consumer_id:   { type: string }
+                count:         { type: integer, default: 1 }
+                visibility_ms: { type: integer, default: 5000 }
+      responses:
+        "200": { description: messages }
+
+  /queue/ack:
+    post:
+      tags: [queue]
+      summary: Mark a delivered message as consumed
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, consumer_id, seq]
+              properties:
+                topic:       { type: string }
+                consumer_id: { type: string }
+                seq:         { type: integer }
+      responses:
+        "200": { description: ok }
+
+  /queue/state:
+    get:
+      tags: [queue]
+      summary: Per-topic stats on this node
+      responses: { "200": { description: ok } }
+
+  /queue/ring:
+    get:
+      tags: [queue]
+      summary: Ring view from this node (sample primaries/replicas)
+      responses: { "200": { description: ok } }
+
+  # ---------------- CACHE ----------------
+  /cache/get:
+    post:
+      tags: [cache]
+      summary: Read a key. Triggers BusRd on miss.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key]
+              properties:
+                key: { type: string }
+      responses:
+        "200":
+          description: value
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:     { type: boolean }
+                  value:  {}
+                  state:  { type: string, enum: [M, E, S] }
+                  source: { type: string }
+        "404":
+          description: not found
+
+  /cache/set:
+    post:
+      tags: [cache]
+      summary: Write a key. Triggers BusRdX (invalidate peers) when needed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              properties:
+                key:   { type: string }
+                value: {}
+      responses: { "200": { description: ok } }
+
+  /cache/state:
+    get:
+      tags: [cache]
+      summary: Cache contents snapshot
+      responses: { "200": { description: ok } }
+
+  # ---------------- RAFT (internal) ----------------
+  /raft/request_vote:
+    post:
+      tags: [raft]
+      summary: RequestVote RPC (lock manager only)
+      responses: { "200": { description: ok } }
+
+  /raft/append_entries:
+    post:
+      tags: [raft]
+      summary: AppendEntries / heartbeat RPC (lock manager only)
+      responses: { "200": { description: ok } }
