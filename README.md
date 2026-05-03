@@ -23,13 +23,14 @@ Endpoint (host -> container):
 
 | Layanan | Port host |
 | --- | --- |
-| `lock1`, `lock2`, `lock3` | `18011`, `18012`, `18013` |
-| `queue1`, `queue2`, `queue3` | `18021`, `18022`, `18023` |
+| `lock1`, `lock2`, `lock3`, `lock4`, `lock5` | `18011`, `18012`, `18013`, `18014`, `18015` |
+| `queue1`, `queue2`, `queue3`, `queue4` | `18021`, `18022`, `18023`, `18024` |
 | `cache1`, `cache2`, `cache3` | `18031`, `18032`, `18033` |
+| `redis` | `6379` (internal only) |
 
 ```bash
 # Cari Raft leader pada cluster lock
-for p in 18011 18012 18013; do
+for p in 18011 18012 18013 18014 18015; do
   curl -s "http://127.0.0.1:$p/status" | python -m json.tool | grep -E 'role|leader_id'
 done
 
@@ -63,9 +64,9 @@ PYTHONPATH=. NODE_ID=node1 NODE_BIND=127.0.0.1:8001 \
 distributed-sync-system/
 ├── src/
 │   ├── nodes/         base_node, lock_manager, queue_node, cache_node
-│   ├── consensus/     raft (dan pbft, opsional)
+│   ├── consensus/     raft
 │   ├── communication/ message_passing, failure_detector
-│   └── utils/         config, logging, metrics
+│   └── utils/         config, logging_setup, metrics
 ├── tests/             unit, integration, performance
 ├── docker/            Dockerfile.node, docker-compose.yml
 ├── docs/              architecture, deployment, api_spec, performance
